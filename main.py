@@ -1,4 +1,6 @@
 # Imports
+import math
+
 import cv2
 import numpy as np
 
@@ -182,6 +184,54 @@ def paintLines(points, image):
     return colored_image
 
 
+def distance_point_to_line_segment(x, y, x1, y1, x2, y2):
+    # Calculate the squared length of the line segment
+    line_length_squared = (x2 - x1) ** 2 + (y2 - y1) ** 2
+
+    # Calculate the parameter t that represents the projection of the point onto the line segment
+    t = ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / line_length_squared
+
+    # If t is outside the range [0, 1], the closest point is one of the endpoints
+    if t < 0:
+        return math.sqrt((x - x1) ** 2 + (y - y1) ** 2)
+    elif t > 1:
+        return math.sqrt((x - x2) ** 2 + (y - y2) ** 2)
+
+    # Calculate the coordinates of the closest point on the line
+    closest_x = x1 + t * (x2 - x1)
+    closest_y = y1 + t * (y2 - y1)
+
+    # Calculate the distance between the point and the closest point on the line
+    return math.sqrt((x - closest_x) ** 2 + (y - closest_y) ** 2)
+
+
+def filterNonArrows(linesA, linesB, tolerance):
+    filtered_lines = []
+
+    for lineA in linesA:
+        for lineB in linesB:
+            dist_start_start = ((lineA[0][0] - lineB[0][0]) ** 2 + (lineA[0][1] - lineB[0][1]) ** 2) ** 0.5
+            dist_start_end = ((lineA[0][0] - lineB[1][0]) ** 2 + (lineA[0][1] - lineB[1][1]) ** 2) ** 0.5
+            dist_end_start = ((lineA[1][0] - lineB[0][0]) ** 2 + (lineA[1][1] - lineB[0][1]) ** 2) ** 0.5
+            dist_end_end = ((lineA[1][0] - lineB[1][0]) ** 2 + (lineA[1][1] - lineB[1][1]) ** 2) ** 0.5
+
+            if (dist_start_start <= tolerance or
+                    dist_start_end <= tolerance or
+                    dist_end_start <= tolerance or
+                    dist_end_end <= tolerance):
+                for lineB2 in linesB:
+                    if lineB2 != lineB:
+                        if distance_point_to_line_segment(lineB[0][0], lineB[0][1], lineB2[0][0], lineB2[0][1],
+                                                          lineB2[1][0], lineB2[1][1]) < tolerance and \
+                                distance_point_to_line_segment(lineB[1][0], lineB[1][1], lineB2[0][0], lineB2[0][1],
+                                                               lineB2[1][0],lineB2[1][1]) < tolerance:
+                            filtered_lines.append(lineA)
+                            filtered_lines.append(lineB)
+                            break  # Once a match is found, no need to check the rest of the linesB
+
+    return filtered_lines
+
+
 # Main Method
 if __name__ == '__main__':
     print("Started Vulcan")
@@ -195,13 +245,16 @@ if __name__ == '__main__':
     triangleImage, triangles = detectArrows(enhancedImage)
     cv2.imshow("Arrows", scale(triangleImage, 1000, 1000))
     slopeLinesImage, slopeLines = detectSimpleArrows(enhancedImage)
-    cv2.imshow("Filtered Arrows",
-               scale(paintLines(filterDoubledArrows(triangles, slopeLines), enhancedImage), 1000, 1000))
     cv2.imshow("Simple Arrows", scale(slopeLinesImage, 1000, 1000))
+    filteredDoubleArrows = filterDoubledArrows(triangles, slopeLines)
+    cv2.imshow("Filtered Arrows",
+               scale(paintLines(filteredDoubleArrows, enhancedImage), 1000, 1000))
     horizontalVerticalLinesImage, horizontalVerticalLines = detectLines(enhancedImage)
     cv2.imshow("Lines", scale(horizontalVerticalLinesImage, 1000, 1000))
+    filteredActualSimpleArrows = filterNonArrows(filteredDoubleArrows, horizontalVerticalLines, 5)
+    cv2.imshow("Actual Simple Arrows",
+               scale(paintLines(filteredActualSimpleArrows, enhancedImage), 1000, 1000))
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-
 
 # Top Left to bottom right?
