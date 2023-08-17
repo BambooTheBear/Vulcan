@@ -224,12 +224,64 @@ def filterNonArrows(linesA, linesB, tolerance):
                         if distance_point_to_line_segment(lineB[0][0], lineB[0][1], lineB2[0][0], lineB2[0][1],
                                                           lineB2[1][0], lineB2[1][1]) < tolerance and \
                                 distance_point_to_line_segment(lineB[1][0], lineB[1][1], lineB2[0][0], lineB2[0][1],
-                                                               lineB2[1][0],lineB2[1][1]) < tolerance:
+                                                               lineB2[1][0], lineB2[1][1]) < tolerance:
                             filtered_lines.append(lineA)
                             filtered_lines.append(lineB)
                             break  # Once a match is found, no need to check the rest of the linesB
 
     return filtered_lines
+
+
+def calculate_distance(rect1, rect2):
+    x1_1, y1_1 = rect1[0]
+    x2_1, y2_1 = rect1[1]
+    x1_2, y1_2 = rect2[0]
+    x2_2, y2_2 = rect2[1]
+
+    distance_x = max(0, max(x1_1, x1_2) - min(x2_1, x2_2))
+    distance_y = max(0, max(y1_1, y1_2) - min(y2_1, y2_2))
+
+    return distance_x + distance_y
+
+
+def filterClassSegments(rectangles):
+    rectangles.sort(key=lambda rect: rect[1][1],
+                    reverse=True)  # Sort rectangles by y2 (bottom y-coordinate) in descending order
+    result = []
+
+    while rectangles:
+        current_rect = rectangles.pop(0)
+        group = [current_rect]
+
+        to_remove = []
+
+        for idx, rect in enumerate(rectangles):
+            if calculate_distance(current_rect, rect) <= 100:
+                group.append(rect)
+                to_remove.append(idx)
+
+        for idx in reversed(to_remove):
+            rectangles.pop(idx)
+
+        group.sort(key=lambda rect: rect[1][0],
+                   reverse=True)  # Sort group by x2 (right x-coordinate) in descending order
+        result.append(group)
+
+    return result
+
+
+def paintClasses(rectangles, image):
+    colored_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    for rectangleList in rectangles:
+        for i, ((x1, y1),(x2, y2)) in enumerate(rectangleList):
+            print(i)
+            if i == 0:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+            elif i == 1:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            elif i==2:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    return colored_image
 
 
 # Main Method
@@ -245,15 +297,18 @@ if __name__ == '__main__':
     triangleImage, triangles = detectArrows(enhancedImage)
     cv2.imshow("Arrows", scale(triangleImage, 1000, 1000))
     slopeLinesImage, slopeLines = detectSimpleArrows(enhancedImage)
-    cv2.imshow("Simple Arrows", scale(slopeLinesImage, 1000, 1000))
+    # cv2.imshow("Simple Arrows", scale(slopeLinesImage, 1000, 1000))
     filteredDoubleArrows = filterDoubledArrows(triangles, slopeLines)
-    cv2.imshow("Filtered Arrows",
-               scale(paintLines(filteredDoubleArrows, enhancedImage), 1000, 1000))
+    # cv2.imshow("Filtered Arrows",
+    #           scale(paintLines(filteredDoubleArrows, enhancedImage), 1000, 1000))
     horizontalVerticalLinesImage, horizontalVerticalLines = detectLines(enhancedImage)
-    cv2.imshow("Lines", scale(horizontalVerticalLinesImage, 1000, 1000))
+    # cv2.imshow("Lines", scale(horizontalVerticalLinesImage, 1000, 1000))
     filteredActualSimpleArrows = filterNonArrows(filteredDoubleArrows, horizontalVerticalLines, 5)
     cv2.imshow("Actual Simple Arrows",
                scale(paintLines(filteredActualSimpleArrows, enhancedImage), 1000, 1000))
+    #print(filterClassSegments(rectangles))
+    cv2.imshow("Classes", scale(paintClasses(filterClassSegments(rectangles), enhancedImage), 1000, 1000))
+
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
