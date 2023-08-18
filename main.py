@@ -305,19 +305,45 @@ def paintClassesColored(rectangles, colored_image):
 
 def getClassesText(rectangles, original_image):
     for j, rectangleList in enumerate(rectangles):
-        s = ""
+        o = {"ClassName":"", "Attributes":[], "Methods":[]}
+        tmp = False
         for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
             t = pytesseract.image_to_string(Image.fromarray(cut(x1,y1,x2,y2,original_image)))
             cv2.imshow(f"{t}", cut(x1,y1,x2,y2,original_image))
-            if i==2:
-                s+=f" [ " \
-                   f"_Class {t}_"
-            if i==1:
-                s+=f"     Attributes: {t}"
-            if i==0:
-                s+=f"     Methods: \n {t} " \
-                   f"]"
-        print(s)
+            if tmp or len(rectangleList)==1:
+                t = t.replace("\n", "")
+                o["ClassName"] = t
+            elif len(rectangleList) == 2:
+                if "(" in t:
+                    x = t.split("\n")
+                    for s in x:
+                        if s!="":
+                            o["Methods"].append(s)
+                    tmp = True
+                elif i==0:
+                    x = t.split("\n")
+                    for s in x:
+                        if s!="":
+                            o["Attributes"].append(s)
+                    tmp = True
+                else:
+                    t = t.replace("\n", "")
+                    o["ClassName"] = t
+            else:
+                if i==0:
+                    x = t.split("\n")
+                    for s in x:
+                        if s!="":
+                            o["Methods"].append(s)
+                if i==1:
+                    x = t.split("\n")
+                    for s in x:
+                        if s!="":
+                            o["Attributes"].append(s)
+                else:
+                    t = t.replace("\n", "")
+                    o["ClassName"] = t
+        print(o)
 
     return original_image
 
@@ -346,7 +372,7 @@ if __name__ == '__main__':
     print("Started Vulcan")
     pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Benno\AppData\Local\Tesseract-OCR\tesseract.exe'
 
-    enhancedImage = enhanceImage("./data/custom/simple_2.png")
+    enhancedImage = enhanceImage("./data/custom/simple_3.png")
 
     # Show Image
     cv2.imshow("Enhanced Image", scale(enhancedImage, 1000, 1000))
@@ -370,7 +396,7 @@ if __name__ == '__main__':
 
     drawEverything(triangles, filteredActualSimpleArrows, classes, enhancedImage)
 
-    getClassesText(classes, cv2.imread("./data/custom/simple_2.png", cv2.IMREAD_GRAYSCALE))
+    getClassesText(classes, cv2.imread("./data/custom/simple_3.png", cv2.IMREAD_GRAYSCALE))
 
     cv2.waitKey(0)
     cv2.destroyAllWindows()
