@@ -3,6 +3,8 @@ import math
 
 import cv2
 import numpy as np
+from PIL import Image
+import pytesseract
 
 
 def scale(image, max_width, max_height):
@@ -169,7 +171,6 @@ def filterDoubledArrows(triangles, slopes):
                     (my1 + tolerance < y1 < my2 - tolerance) or (my1 - tolerance < y1 < my2 + tolerance) or (
                     my1 + tolerance > y1 > my2 - tolerance) or (my1 - tolerance > y1 > my2 + tolerance))
             ):
-                print(f"({x1} | {y1}) and ({x2} | {y2}) is within ({mx1} | {my1}) and ({mx2} | {my2})")
                 within = True
                 break
         if not within:
@@ -179,6 +180,12 @@ def filterDoubledArrows(triangles, slopes):
 
 def paintLines(points, image):
     colored_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    for ((x1, y1), (x2, y2)) in points:
+        cv2.line(colored_image, (x1, y1), (x2, y2), (255, 0, 255), 2)  # Draw line in blue
+    return colored_image
+
+
+def paintLinesColored(points, colored_image):
     for ((x1, y1), (x2, y2)) in points:
         cv2.line(colored_image, (x1, y1), (x2, y2), (255, 0, 255), 2)  # Draw line in blue
     return colored_image
@@ -273,20 +280,71 @@ def filterClassSegments(rectangles):
 def paintClasses(rectangles, image):
     colored_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     for rectangleList in rectangles:
-        for i, ((x1, y1),(x2, y2)) in enumerate(rectangleList):
-            print(i)
+        for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
             if i == 0:
                 cv2.rectangle(colored_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
             elif i == 1:
                 cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            elif i==2:
+            elif i == 2:
                 cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
     return colored_image
+
+
+def paintClassesColored(rectangles, colored_image):
+    for j, rectangleList in enumerate(rectangles):
+        for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
+            #cv2.imshow(f"{pytesseract.image_to_string(Image.fromarray(cut(x1,y1,x2,y2,colored_image)))}", cut(x1,y1,x2,y2,colored_image))
+            if i == 0:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+            elif i == 1:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            elif i == 2:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    return colored_image
+
+
+def getClassesText(rectangles, original_image):
+    for j, rectangleList in enumerate(rectangles):
+        s = ""
+        for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
+            t = pytesseract.image_to_string(Image.fromarray(cut(x1,y1,x2,y2,original_image)))
+            cv2.imshow(f"{t}", cut(x1,y1,x2,y2,original_image))
+            if i==2:
+                s+=f" [ " \
+                   f"_Class {t}_"
+            if i==1:
+                s+=f"     Attributes: {t}"
+            if i==0:
+                s+=f"     Methods: \n {t} " \
+                   f"]"
+        print(s)
+
+    return original_image
+
+
+def paintRectangles(rectangles, image):
+    for ((x1, y1), (x2, y2)) in rectangles:
+        cv2.rectangle(image, (x1, y1), (x2, y2), (255, 255, 0), 2)
+    return image
+
+
+def drawEverything(inheritanceArows, assosiationArrows, classes, blackWhiteImage):
+    image = cv2.cvtColor(blackWhiteImage, cv2.COLOR_GRAY2BGR)
+    image = paintRectangles(inheritanceArows, image)
+    image = paintLinesColored(assosiationArrows, image)
+    image = paintClassesColored(classes, image)
+    image = scale(image, 1000, 1000)
+    cv2.imshow("Everything", image)
+
+
+def cut(x1, y1, x2, y2, image):
+    return image[y1:y2, x1:x2]
 
 
 # Main Method
 if __name__ == '__main__':
     print("Started Vulcan")
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Benno\AppData\Local\Tesseract-OCR\tesseract.exe'
 
     enhancedImage = enhanceImage("./data/custom/simple_2.png")
 
@@ -306,8 +364,13 @@ if __name__ == '__main__':
     filteredActualSimpleArrows = filterNonArrows(filteredDoubleArrows, horizontalVerticalLines, 5)
     cv2.imshow("Actual Simple Arrows",
                scale(paintLines(filteredActualSimpleArrows, enhancedImage), 1000, 1000))
-    #print(filterClassSegments(rectangles))
-    cv2.imshow("Classes", scale(paintClasses(filterClassSegments(rectangles), enhancedImage), 1000, 1000))
+    # print(filterClassSegments(rectangles))
+    classes = filterClassSegments(rectangles)
+    cv2.imshow("Classes", scale(paintClasses(classes, enhancedImage), 1000, 1000))
+
+    drawEverything(triangles, filteredActualSimpleArrows, classes, enhancedImage)
+
+    getClassesText(classes, cv2.imread("./data/custom/simple_2.png", cv2.IMREAD_GRAYSCALE))
 
     cv2.waitKey(0)
     cv2.destroyAllWindows()
