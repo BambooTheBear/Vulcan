@@ -138,7 +138,7 @@ def detectLines(image):
     edges = cv2.Canny(blurred_image, 50, 150)
 
     # Perform Hough Line Transform to detect lines
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=20, minLineLength=30, maxLineGap=2)
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=20, minLineLength=5, maxLineGap=0)
 
     # Extract starting and ending points of detected lines
     line_points = []
@@ -293,7 +293,7 @@ def paintClasses(rectangles, image):
 def paintClassesColored(rectangles, colored_image):
     for j, rectangleList in enumerate(rectangles):
         for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
-            #cv2.imshow(f"{pytesseract.image_to_string(Image.fromarray(cut(x1,y1,x2,y2,colored_image)))}", cut(x1,y1,x2,y2,colored_image))
+            # cv2.imshow(f"{pytesseract.image_to_string(Image.fromarray(cut(x1,y1,x2,y2,colored_image)))}", cut(x1,y1,x2,y2,colored_image))
             if i == 0:
                 cv2.rectangle(colored_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
             elif i == 1:
@@ -305,40 +305,40 @@ def paintClassesColored(rectangles, colored_image):
 
 def getClassesText(rectangles, original_image):
     for j, rectangleList in enumerate(rectangles):
-        o = {"ClassName":"", "Attributes":[], "Methods":[]}
+        o = {"ClassName": "", "Attributes": [], "Methods": []}
         tmp = False
         for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
-            t = pytesseract.image_to_string(Image.fromarray(cut(x1,y1,x2,y2,original_image)))
-            cv2.imshow(f"{t}", cut(x1,y1,x2,y2,original_image))
-            if tmp or len(rectangleList)==1:
+            t = pytesseract.image_to_string(Image.fromarray(cut(x1, y1, x2, y2, original_image)))
+            cv2.imshow(f"{t}", cut(x1, y1, x2, y2, original_image))
+            if tmp or len(rectangleList) == 1:
                 t = t.replace("\n", "")
                 o["ClassName"] = t
             elif len(rectangleList) == 2:
                 if "(" in t:
                     x = t.split("\n")
                     for s in x:
-                        if s!="":
+                        if s != "":
                             o["Methods"].append(s)
                     tmp = True
-                elif i==0:
+                elif i == 0:
                     x = t.split("\n")
                     for s in x:
-                        if s!="":
+                        if s != "":
                             o["Attributes"].append(s)
                     tmp = True
                 else:
                     t = t.replace("\n", "")
                     o["ClassName"] = t
             else:
-                if i==0:
+                if i == 0:
                     x = t.split("\n")
                     for s in x:
-                        if s!="":
+                        if s != "":
                             o["Methods"].append(s)
-                if i==1:
+                if i == 1:
                     x = t.split("\n")
                     for s in x:
-                        if s!="":
+                        if s != "":
                             o["Attributes"].append(s)
                 else:
                     t = t.replace("\n", "")
@@ -354,6 +354,35 @@ def paintRectangles(rectangles, image):
     return image
 
 
+def is_line_inside_rect(line, rect):
+    x1, y1 = line[0]
+    x2, y2 = line[1]
+    rx1, ry1 = rect[0]
+    rx2, ry2 = rect[1]
+
+    return rx1 <= x1 <= rx2 and ry1 <= y1 <= ry2 and rx1 <= x2 <= rx2 and ry1 <= y2 <= ry2
+
+
+def filterHVLines(lines, rectangles, threshold):
+    filtered_lines = []
+
+    for line in lines:
+        is_inside = False
+
+        for rect in rectangles:
+            extended_rect = ((rect[0][0] - threshold, rect[0][1] - threshold),
+                             (rect[1][0] + threshold, rect[1][1] + threshold))
+
+            if is_line_inside_rect(line, extended_rect):
+                is_inside = True
+                break
+
+        if not is_inside:
+            filtered_lines.append(line)
+
+    return filtered_lines
+
+
 def drawEverything(inheritanceArows, assosiationArrows, classes, blackWhiteImage):
     image = cv2.cvtColor(blackWhiteImage, cv2.COLOR_GRAY2BGR)
     image = paintRectangles(inheritanceArows, image)
@@ -367,12 +396,63 @@ def cut(x1, y1, x2, y2, image):
     return image[y1:y2, x1:x2]
 
 
+def flatten_list_of_lists(list_of_lists):
+    flattened_list = []
+    for sublist in list_of_lists:
+        for item in sublist:
+            flattened_list.append(item)
+    return flattened_list
+
+
+def distance(p1, p2):
+    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+
+
+def mark_adjacent_lines(lines, arrowHeads, marked_lines, proximity_threshold):
+    newly_marked = []
+
+    for line in lines:
+        if line in marked_lines:
+            continue
+
+        for rect in arrowHeads:
+            if (distance(line[0], rect[0]) <= proximity_threshold or
+                    distance(line[0], rect[1]) <= proximity_threshold or
+                    distance(line[1], rect[0]) <= proximity_threshold or
+                    distance(line[1], rect[1]) <= proximity_threshold):
+                marked_lines.append(line)
+                newly_marked.append(line)
+                break
+
+        for marked_line in marked_lines:
+            if (distance(line[0], marked_line[0]) <= proximity_threshold or
+                    distance(line[0], marked_line[1]) <= proximity_threshold or
+                    distance(line[1], marked_line[0]) <= proximity_threshold or
+                    distance(line[1], marked_line[1]) <= proximity_threshold):
+                marked_lines.append(line)
+                newly_marked.append(line)
+                break
+
+    return newly_marked
+
+
+def filter_marked_lines(lines, arrowHeads, proximity_threshold):
+    marked_lines = []
+    new_marked_lines = mark_adjacent_lines(lines, arrowHeads, marked_lines, proximity_threshold)
+
+    while new_marked_lines:
+        new_marked_lines = mark_adjacent_lines(lines, arrowHeads, marked_lines, proximity_threshold)
+
+    return marked_lines
+
+
 # Main Method
 if __name__ == '__main__':
     print("Started Vulcan")
     pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Benno\AppData\Local\Tesseract-OCR\tesseract.exe'
+    filePath = "./data/custom/simple_4.png"
 
-    enhancedImage = enhanceImage("./data/custom/simple_3.png")
+    enhancedImage = enhanceImage(filePath)
 
     # Show Image
     cv2.imshow("Enhanced Image", scale(enhancedImage, 1000, 1000))
@@ -386,7 +466,7 @@ if __name__ == '__main__':
     # cv2.imshow("Filtered Arrows",
     #           scale(paintLines(filteredDoubleArrows, enhancedImage), 1000, 1000))
     horizontalVerticalLinesImage, horizontalVerticalLines = detectLines(enhancedImage)
-    # cv2.imshow("Lines", scale(horizontalVerticalLinesImage, 1000, 1000))
+    cv2.imshow("Lines", scale(horizontalVerticalLinesImage, 1000, 1000))
     filteredActualSimpleArrows = filterNonArrows(filteredDoubleArrows, horizontalVerticalLines, 5)
     cv2.imshow("Actual Simple Arrows",
                scale(paintLines(filteredActualSimpleArrows, enhancedImage), 1000, 1000))
@@ -394,9 +474,17 @@ if __name__ == '__main__':
     classes = filterClassSegments(rectangles)
     cv2.imshow("Classes", scale(paintClasses(classes, enhancedImage), 1000, 1000))
 
+    filterdLines = filterHVLines(horizontalVerticalLines, flatten_list_of_lists(classes), 10)
+    filterdLinesImage = paintLines(filterdLines, enhancedImage)
+    cv2.imshow("filtered Lines", scale(filterdLinesImage, 1000, 1000))
+
+    markedLines=filter_marked_lines(filterdLines, triangles, 30)
+    markedLinesImage = paintLines(markedLines, enhancedImage)
+    cv2.imshow("Marked Lines", scale(markedLinesImage, 1000, 1000))
+
     drawEverything(triangles, filteredActualSimpleArrows, classes, enhancedImage)
 
-    getClassesText(classes, cv2.imread("./data/custom/simple_3.png", cv2.IMREAD_GRAYSCALE))
+    getClassesText(classes, cv2.imread(filePath, cv2.IMREAD_GRAYSCALE))
 
     cv2.waitKey(0)
     cv2.destroyAllWindows()
