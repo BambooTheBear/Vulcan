@@ -309,7 +309,7 @@ def getClassesText(rectangles, original_image):
         tmp = False
         for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
             t = pytesseract.image_to_string(Image.fromarray(cut(x1, y1, x2, y2, original_image)))
-            cv2.imshow(f"{t}", cut(x1, y1, x2, y2, original_image))
+            #cv2.imshow(f"{t}", cut(x1, y1, x2, y2, original_image))
             if tmp or len(rectangleList) == 1:
                 t = t.replace("\n", "")
                 o["ClassName"] = t
@@ -436,21 +436,82 @@ def mark_adjacent_lines(lines, arrowHeads, marked_lines, proximity_threshold):
     return newly_marked
 
 
+def find_connected_lines(lines, proximity_threshold):
+    connected_lines = {}
+    for i, line1 in enumerate(lines):
+        for j, line2 in enumerate(lines):
+            if i != j and (distance(line1[0], line2[0]) <= proximity_threshold or
+                           distance(line1[0], line2[1]) <= proximity_threshold or
+                           distance(line1[1], line2[0]) <= proximity_threshold or
+                           distance(line1[1], line2[1]) <= proximity_threshold):
+                connected_lines.setdefault(line1, []).append(line2)
+
+    return connected_lines
+
+
 def filter_marked_lines(lines, arrowHeads, proximity_threshold):
     marked_lines = []
     new_marked_lines = mark_adjacent_lines(lines, arrowHeads, marked_lines, proximity_threshold)
 
+    line_arrowhead_dict = {}  # Dictionary to store line-arrowhead associations
+
     while new_marked_lines:
+        for line in new_marked_lines:
+            for rect in arrowHeads:
+                if (distance(line[0], rect[0]) <= proximity_threshold or
+                        distance(line[0], rect[1]) <= proximity_threshold or
+                        distance(line[1], rect[0]) <= proximity_threshold or
+                        distance(line[1], rect[1]) <= proximity_threshold):
+                    line_arrowhead_dict.setdefault(line, []).append(rect)
+
+        marked_lines.extend(new_marked_lines)
         new_marked_lines = mark_adjacent_lines(lines, arrowHeads, marked_lines, proximity_threshold)
 
-    return marked_lines
+    connected_lines = find_connected_lines(lines, proximity_threshold)
+
+    return marked_lines, connected_lines
+
+
+def extractIndirectConnections(graph):
+    def findIndirectConnections(node, x):
+        indirect_connections = []
+        if x<10:
+            if node in graph:
+                for neighbor in graph[node]:
+                    indirect_connections.extend(findIndirectConnections(neighbor, x+1))
+                    indirect_connections.append(neighbor)
+        return indirect_connections
+
+    indirect_graph = {}
+    for node in graph:
+        indirect_connections = findIndirectConnections(node, 0)
+        direct_connections = graph[node]
+        all_connections = list(set(direct_connections + indirect_connections))
+        indirect_graph[node] = all_connections
+
+    return indirect_graph
+
+
+def extractShortestConnection(dictionary):
+    result = []
+    for key, values in dictionary.items():
+        for value in values:
+            result.append((key[0],value[-1]))
+    return result
+
+
+def printDictNice(dictionary):
+    for key, values in dictionary.items():
+        print(f"   {key}     ")
+        for value in values:
+            print(f"         {value} ;")
 
 
 # Main Method
 if __name__ == '__main__':
     print("Started Vulcan")
     pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Benno\AppData\Local\Tesseract-OCR\tesseract.exe'
-    filePath = "./data/custom/simple_4.png"
+    filePath = "./data/custom/very_simple.png"
 
     enhancedImage = enhanceImage(filePath)
 
@@ -478,9 +539,17 @@ if __name__ == '__main__':
     filterdLinesImage = paintLines(filterdLines, enhancedImage)
     cv2.imshow("filtered Lines", scale(filterdLinesImage, 1000, 1000))
 
-    markedLines=filter_marked_lines(filterdLines, triangles, 30)
+    markedLines, markedLinesDict=filter_marked_lines(filterdLines, triangles, 50)
+    printDictNice(markedLinesDict)
+    print(markedLines)
     markedLinesImage = paintLines(markedLines, enhancedImage)
     cv2.imshow("Marked Lines", scale(markedLinesImage, 1000, 1000))
+
+    indirectLines = extractIndirectConnections(markedLinesDict)
+    print(indirectLines)
+    shortestConnections = extractShortestConnection(indirectLines)
+    shortestConnectionImage = paintLines(shortestConnections, enhancedImage)
+    cv2.imshow("Indirect Lines", scale(shortestConnectionImage, 1000, 1000))
 
     drawEverything(triangles, filteredActualSimpleArrows, classes, enhancedImage)
 
