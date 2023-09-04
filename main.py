@@ -309,7 +309,7 @@ def getClassesText(rectangles, original_image):
         tmp = False
         for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
             t = pytesseract.image_to_string(Image.fromarray(cut(x1, y1, x2, y2, original_image)))
-            #cv2.imshow(f"{t}", cut(x1, y1, x2, y2, original_image))
+            # cv2.imshow(f"{t}", cut(x1, y1, x2, y2, original_image))
             if tmp or len(rectangleList) == 1:
                 t = t.replace("\n", "")
                 o["ClassName"] = t
@@ -475,10 +475,10 @@ def filter_marked_lines(lines, arrowHeads, proximity_threshold):
 def extractIndirectConnections(graph):
     def findIndirectConnections(node, x):
         indirect_connections = []
-        if x<5:
+        if x < 5:
             if node in graph:
                 for neighbor in graph[node]:
-                    indirect_connections.extend(findIndirectConnections(neighbor, x+1))
+                    indirect_connections.extend(findIndirectConnections(neighbor, x + 1))
                     indirect_connections.append(neighbor)
         return indirect_connections
 
@@ -495,15 +495,15 @@ def extractIndirectConnections(graph):
 def extractShortestConnection(dictionary):
     result = []
     for key, values in dictionary.items():
-        valuesSorted=sorted(values,key=lambda p: math.sqrt((key[0][0] - p[1][0])**2 + (key[0][1] - p[1][1])**2))
-        result.append((key[0],valuesSorted[-1][1]))
+        valuesSorted = sorted(values, key=lambda p: math.sqrt((key[0][0] - p[1][0]) ** 2 + (key[0][1] - p[1][1]) ** 2))
+        result.append((key[0], valuesSorted[-1][1]))
     return result
 
 
 def filterLinesWithArrowhead(lines, arrowheads, classes):
     print(f"Rectangles: {rectangles}")
     filtered_lines = []
-    tolerance=10
+    tolerance = 10
     for line in lines:
         start_point, end_point = line
         for rect1 in arrowheads:
@@ -511,10 +511,11 @@ def filterLinesWithArrowhead(lines, arrowheads, classes):
                 x1, y1 = start_point
                 (mx1, my1), (mx2, my2) = rect1
                 if (
-                    ((mx1 + tolerance < x1 < mx2 - tolerance) or (mx1 - tolerance < x1 < mx2 + tolerance) or (
-                            mx1 + tolerance > x1 > mx2 - tolerance) or (mx1 - tolerance > x1 > mx2 + tolerance)) and (
-                    (my1 + tolerance < y1 < my2 - tolerance) or (my1 - tolerance < y1 < my2 + tolerance) or (
-                    my1 + tolerance > y1 > my2 - tolerance) or (my1 - tolerance > y1 > my2 + tolerance))
+                        ((mx1 + tolerance < x1 < mx2 - tolerance) or (mx1 - tolerance < x1 < mx2 + tolerance) or (
+                                mx1 + tolerance > x1 > mx2 - tolerance) or (
+                                 mx1 - tolerance > x1 > mx2 + tolerance)) and (
+                        (my1 + tolerance < y1 < my2 - tolerance) or (my1 - tolerance < y1 < my2 + tolerance) or (
+                        my1 + tolerance > y1 > my2 - tolerance) or (my1 - tolerance > y1 > my2 + tolerance))
                 ):
                     x1, y1 = end_point
                     (mx1, my1), (mx2, my2) = rect2
@@ -593,7 +594,7 @@ if __name__ == '__main__':
     filterdLinesImage = paintLines(filterdLines, enhancedImage)
     cv2.imshow("filtered Lines", scale(filterdLinesImage, 1000, 1000))
 
-    markedLines, markedLinesDict=filter_marked_lines(filterdLines, triangles, 50)
+    markedLines, markedLinesDict = filter_marked_lines(filterdLines, triangles, 50)
     printDictNice(markedLinesDict)
     print(markedLines)
     markedLinesImage = paintLines(markedLines, enhancedImage)
