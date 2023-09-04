@@ -475,7 +475,7 @@ def filter_marked_lines(lines, arrowHeads, proximity_threshold):
 def extractIndirectConnections(graph):
     def findIndirectConnections(node, x):
         indirect_connections = []
-        if x<10:
+        if x<5:
             if node in graph:
                 for neighbor in graph[node]:
                     indirect_connections.extend(findIndirectConnections(neighbor, x+1))
@@ -501,16 +501,13 @@ def extractShortestConnection(dictionary):
 
 
 def filterLinesWithArrowhead(lines, arrowheads, classes):
-    rectangles=arrowheads
-    for rectangle in classes:
-        rectangles.append(rectangle)
     print(f"Rectangles: {rectangles}")
     filtered_lines = []
     tolerance=10
     for line in lines:
         start_point, end_point = line
-        for rect1 in rectangles:
-            for rect2 in rectangles:
+        for rect1 in arrowheads:
+            for rect2 in classes:
                 x1, y1 = start_point
                 (mx1, my1), (mx2, my2) = rect1
                 if (
@@ -567,7 +564,7 @@ def printDictNice(dictionary):
 if __name__ == '__main__':
     print("Started Vulcan")
     pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Benno\AppData\Local\Tesseract-OCR\tesseract.exe'
-    filePath = "./data/custom/very_simple.png"
+    filePath = "./data/custom/simple_4.png"
 
     enhancedImage = enhanceImage(filePath)
 
