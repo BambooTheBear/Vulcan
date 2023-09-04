@@ -501,8 +501,8 @@ def extractShortestConnection(dictionary):
 
 
 def filterLinesWithArrowhead(lines, arrowheads, classes):
-    print(f"Rectangles: {rectangles}")
     filtered_lines = []
+    lineRectangles = {}
     tolerance = 10
     for line in lines:
         start_point, end_point = line
@@ -519,8 +519,6 @@ def filterLinesWithArrowhead(lines, arrowheads, classes):
                 ):
                     x1, y1 = end_point
                     (mx1, my1), (mx2, my2) = rect2
-                    print(f"{x1}; {y1}")
-                    print(f"({mx1}, {my1}); ({mx2}, {my2})")
                     if (
                             ((mx1 + tolerance < x1 < mx2 - tolerance) or (mx1 - tolerance < x1 < mx2 + tolerance) or (
                                     mx1 + tolerance > x1 > mx2 - tolerance) or (
@@ -528,6 +526,7 @@ def filterLinesWithArrowhead(lines, arrowheads, classes):
                             (my1 + tolerance < y1 < my2 - tolerance) or (my1 - tolerance < y1 < my2 + tolerance) or (
                             my1 + tolerance > y1 > my2 - tolerance) or (my1 - tolerance > y1 > my2 + tolerance))
                     ):
+                        lineRectangles.setdefault(line, (rect2, rect1))
                         filtered_lines.append(line)
                 else:
                     x1, y1 = end_point
@@ -550,8 +549,36 @@ def filterLinesWithArrowhead(lines, arrowheads, classes):
                                         my1 + tolerance > y1 > my2 - tolerance) or (
                                         my1 - tolerance > y1 > my2 + tolerance))
                         ):
+                            lineRectangles.setdefault(line, (rect2, rect1))
                             filtered_lines.append(line)
-    return filtered_lines
+    return filtered_lines, lineRectangles
+
+
+def detectRelations(connectionDict, classes, original_image):
+    tolerance = 20
+    for ((lineX1, lineY1), (lineX2, lineY2)), (
+    ((startX1, startY1), (startX2, startY2)), ((endX1, endY1), (endX2, endY2))) in connectionDict.items():
+        for clas in classes:
+            (mx1, my1), (mx2, my2) = clas[0]
+            if (
+                    ((mx1 + tolerance < endX1 < mx2 - tolerance) or (
+                            mx1 - tolerance < endX1 < mx2 + tolerance) or (
+                             mx1 + tolerance > endX1 > mx2 - tolerance) or (
+                             mx1 - tolerance > endX1 > mx2 + tolerance)) and (
+                    (my1 + tolerance < endY1 < my2 - tolerance) or (
+                    my1 - tolerance < endY1 < my2 + tolerance) or (
+                            my1 + tolerance > endY1 > my2 - tolerance) or (
+                            my1 - tolerance > endY1 > my2 + tolerance))
+            ):
+                for clas2 in classes:
+                    if ((startX1, startY1), (startX2, startY2)) in clas2:
+                        (mx1, my1), (mx2, my2) = clas[-1]
+                        if ((mx1, my1), (mx2, my2)) != ((startX1, startY1), (startX2, startY2)):
+                            t = ""+pytesseract.image_to_string(
+                                Image.fromarray(cut(startX1, startY1, startX2, startY2, original_image)))
+                            s = ""+pytesseract.image_to_string(
+                                Image.fromarray(cut(mx1, my1, mx2, my2, original_image)))
+                            print(f"Connection from {t} to {s}")
 
 
 def printDictNice(dictionary):
@@ -572,7 +599,6 @@ if __name__ == '__main__':
     # Show Image
     cv2.imshow("Enhanced Image", scale(enhancedImage, 1000, 1000))
     rectangleImage, rectangles = detectRectangles(enhancedImage)
-    print(f"Rectangles: {rectangles}")
     cv2.imshow("Rectangles", scale(rectangleImage, 1000, 1000))
     triangleImage, triangles = detectArrows(enhancedImage)
     cv2.imshow("Arrows", scale(triangleImage, 1000, 1000))
@@ -586,7 +612,6 @@ if __name__ == '__main__':
     filteredActualSimpleArrows = filterNonArrows(filteredDoubleArrows, horizontalVerticalLines, 5)
     cv2.imshow("Actual Simple Arrows",
                scale(paintLines(filteredActualSimpleArrows, enhancedImage), 1000, 1000))
-    # print(filterClassSegments(rectangles))
     classes = filterClassSegments(rectangles.copy())
     cv2.imshow("Classes", scale(paintClasses(classes, enhancedImage), 1000, 1000))
 
@@ -595,22 +620,20 @@ if __name__ == '__main__':
     cv2.imshow("filtered Lines", scale(filterdLinesImage, 1000, 1000))
 
     markedLines, markedLinesDict = filter_marked_lines(filterdLines, triangles, 50)
-    printDictNice(markedLinesDict)
-    print(markedLines)
     markedLinesImage = paintLines(markedLines, enhancedImage)
     cv2.imshow("Marked Lines", scale(markedLinesImage, 1000, 1000))
 
     indirectLines = extractIndirectConnections(markedLinesDict)
-    print(indirectLines)
     shortestConnections = extractShortestConnection(indirectLines)
     indirectLinesImage = paintLines(indirectLines, enhancedImage)
     cv2.imshow("Indirect Lines", scale(indirectLinesImage, 1000, 1000))
     shortestConnectionImage = paintLines(shortestConnections, enhancedImage)
     cv2.imshow("Shortest Connection Lines", scale(shortestConnectionImage, 1000, 1000))
-    actualConnections = filterLinesWithArrowhead(shortestConnections, triangles, rectangles)
-    print(actualConnections)
+    actualConnections, connectionDict = filterLinesWithArrowhead(shortestConnections, triangles, rectangles)
     actualConnectionImage = paintLines(actualConnections, enhancedImage)
     cv2.imshow("Actual Connection Lines", scale(actualConnectionImage, 1000, 1000))
+
+    detectRelations(connectionDict, classes, cv2.imread(filePath, cv2.IMREAD_GRAYSCALE))
 
     drawEverything(triangles, filteredActualSimpleArrows, classes, enhancedImage)
 
