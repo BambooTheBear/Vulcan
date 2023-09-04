@@ -495,9 +495,13 @@ def extractIndirectConnections(graph):
 def extractShortestConnection(dictionary):
     result = []
     for key, values in dictionary.items():
-        for value in values:
-            result.append((key[0],value[-1]))
+        valuesSorted=sorted(values,key=lambda p: math.sqrt((key[0][0] - p[1][0])**2 + (key[0][1] - p[1][1])**2))
+        result.append((key[0],valuesSorted[-1][1]))
     return result
+
+
+def filterLinesWithArrowhead(lines, arrowheads):
+
 
 
 def printDictNice(dictionary):
@@ -548,8 +552,10 @@ if __name__ == '__main__':
     indirectLines = extractIndirectConnections(markedLinesDict)
     print(indirectLines)
     shortestConnections = extractShortestConnection(indirectLines)
+    indirectLinesImage = paintLines(indirectLines, enhancedImage)
+    cv2.imshow("Indirect Lines", scale(indirectLinesImage, 1000, 1000))
     shortestConnectionImage = paintLines(shortestConnections, enhancedImage)
-    cv2.imshow("Indirect Lines", scale(shortestConnectionImage, 1000, 1000))
+    cv2.imshow("Shortest Connection Lines", scale(shortestConnectionImage, 1000, 1000))
 
     drawEverything(triangles, filteredActualSimpleArrows, classes, enhancedImage)
 
