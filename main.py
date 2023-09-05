@@ -6,6 +6,8 @@ import numpy as np
 from PIL import Image
 import pytesseract
 
+from generateCode import generateCode
+
 
 def scale(image, max_width, max_height):
     # Get the original dimensions of the image
@@ -304,6 +306,7 @@ def paintClassesColored(rectangles, colored_image):
 
 
 def getClassesText(rectangles, original_image):
+    classesJson=[]
     for j, rectangleList in enumerate(rectangles):
         o = {"ClassName": "", "Attributes": [], "Methods": []}
         tmp = False
@@ -344,8 +347,9 @@ def getClassesText(rectangles, original_image):
                     t = t.replace("\n", "")
                     o["ClassName"] = t
         print(o)
+        classesJson.append(o)
 
-    return original_image
+    return original_image, classesJson
 
 
 def paintRectangles(rectangles, image):
@@ -555,6 +559,7 @@ def filterLinesWithArrowhead(lines, arrowheads, classes):
 
 
 def detectRelations(connectionDict, classes, original_image):
+    connections=[]
     tolerance = 20
     for ((lineX1, lineY1), (lineX2, lineY2)), (
     ((startX1, startY1), (startX2, startY2)), ((endX1, endY1), (endX2, endY2))) in connectionDict.items():
@@ -579,7 +584,8 @@ def detectRelations(connectionDict, classes, original_image):
                             s = ""+pytesseract.image_to_string(
                                 Image.fromarray(cut(mx1, my1, mx2, my2, original_image)))
                             print(f"Connection from {t} to {s}")
-
+                            connections.append((t, s))
+    return connections
 
 def printDictNice(dictionary):
     for key, values in dictionary.items():
@@ -592,7 +598,7 @@ def printDictNice(dictionary):
 if __name__ == '__main__':
     print("Started Vulcan")
     pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Benno\AppData\Local\Tesseract-OCR\tesseract.exe'
-    filePath = "./data/custom/simple_4.png"
+    filePath = "./data/custom/very_simple.png"
 
     enhancedImage = enhanceImage(filePath)
 
@@ -633,11 +639,13 @@ if __name__ == '__main__':
     actualConnectionImage = paintLines(actualConnections, enhancedImage)
     cv2.imshow("Actual Connection Lines", scale(actualConnectionImage, 1000, 1000))
 
-    detectRelations(connectionDict, classes, cv2.imread(filePath, cv2.IMREAD_GRAYSCALE))
+    relations = detectRelations(connectionDict, classes, cv2.imread(filePath, cv2.IMREAD_GRAYSCALE))
 
     drawEverything(triangles, filteredActualSimpleArrows, classes, enhancedImage)
 
-    getClassesText(classes, cv2.imread(filePath, cv2.IMREAD_GRAYSCALE))
+    classesImage, classesJson = getClassesText(classes, cv2.imread(filePath, cv2.IMREAD_GRAYSCALE))
+
+    generateCode(classesJson, relations)
 
     cv2.waitKey(0)
     cv2.destroyAllWindows()
