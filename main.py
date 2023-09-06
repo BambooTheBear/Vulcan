@@ -507,7 +507,7 @@ def extractShortestConnection(dictionary):
 def filterLinesWithArrowhead(lines, arrowheads, classes):
     filtered_lines = []
     lineRectangles = {}
-    tolerance = 10
+    tolerance = 20
     for line in lines:
         start_point, end_point = line
         for rect1 in arrowheads:
@@ -584,6 +584,8 @@ def detectRelations(connectionDict, classes, original_image):
                             s = ""+pytesseract.image_to_string(
                                 Image.fromarray(cut(mx1, my1, mx2, my2, original_image)))
                             print(f"Connection from {t} to {s}")
+                            t = t.replace("«abstract»", "").replace("«interface»", "").replace("<<abstract>>", "").replace("<<interface>>", "")
+                            s = s.replace("«abstract»", "").replace("«interface»", "").replace("<<abstract>>", "").replace("<<interface>>", "")
                             connections.append((t, s))
     return connections
 
@@ -598,7 +600,7 @@ def printDictNice(dictionary):
 if __name__ == '__main__':
     print("Started Vulcan")
     pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Benno\AppData\Local\Tesseract-OCR\tesseract.exe'
-    filePath = "./data/custom/very_simple.png"
+    filePath = "./data/custom/semi_complex.png"
 
     enhancedImage = enhanceImage(filePath)
 

@@ -9,6 +9,12 @@ def generateCode(classes, inheritance):
         elif "<<interface>>" in classObject["ClassName"]:
             actualClass["interface"] = True
             actualClass["name"] = classObject["ClassName"].replace("<<interface>>", "")
+        elif "«abstract»" in classObject["ClassName"]:
+            actualClass["abstract"] = True
+            actualClass["name"] = classObject["ClassName"].replace("«abstract»", "")
+        elif "«interface»" in classObject["ClassName"]:
+            actualClass["interface"] = True
+            actualClass["name"] = classObject["ClassName"].replace("«interface»", "")
         else:
             actualClass["name"] = classObject["ClassName"]
 
@@ -49,52 +55,83 @@ def generateCode(classes, inheritance):
 
     javaCodes = []
     for actualClass in actualClasses:
-        javaCode = json_to_java_class(actualClass)
+        javaCode = json_to_java_class(actualClass, actualClasses)
         print(javaCode)
         javaCodes.append(javaCode)
-        write_java_class_to_file(javaCode, actualClass["name"])
+        write_java_class_to_file(javaCode, actualClass["name"]+".java")
 
 
-def json_to_java_class(json_obj):
-    # Ensure the input is a dictionary
-    if not isinstance(json_obj, dict):
-        raise ValueError("Input must be a dictionary")
+def json_to_java_class(class_info, classes):
+    # Initialize a variable to store the generated Java code
+    java_code = []
 
-    # Get class name
-    class_name = json_obj.get('name', 'UnknownClass')
+    # Helper function to generate attribute declarations
+    def generate_attributes(attributes):
+        attribute_declarations = []
+        for attr in attributes:
+            access_modifier = 'public' if attr['public'] else 'private'
+            attribute_declarations.append(f'{access_modifier} {attr["type"]} {attr["name"]};')
+        return attribute_declarations
 
-    # Initialize the Java class code
-    java_class_code = f'public class {class_name} '
+    # Helper function to generate method declarations
+    def generate_methods(methods, is_interface):
+        method_declarations = []
+        for method in methods:
+            access_modifier = 'public' if method['public'] else 'private'
+            return_type = 'void' if method['returnType'] == 'null' else method['returnType']
+            method_name = method['name']
+            arguments = ', '.join(method['arguments'])
 
-    # Check if the class inherits from another class
-    inherits_from = json_obj.get('inheritsFrom', None)
-    if inherits_from:
-        java_class_code += f'extends {inherits_from} '
+            if is_interface:
+                method_declarations.append(f'{access_modifier} abstract {return_type} {method_name}({arguments});')
+            else:
+                method_declarations.append(f'{access_modifier} {return_type} {method_name}({arguments}) {{ /* method implementation */ }}')
 
-    java_class_code += '{\n'
+        return method_declarations
 
-    # Process attributes
-    attributes = json_obj.get('attributes', [])
-    for attribute in attributes:
-        attr_name = attribute.get('name', 'unknownAttribute')
-        attr_type = attribute.get('type', 'Object')
-        java_class_code += f'    private {attr_type} {attr_name};\n'
+    # Iterate through JSON objects and generate Java code
+    class_name = class_info['name']
+    is_interface = class_info['interface']
+    is_abstract = class_info['abstract']
+    inherits_from = class_info['inheritsFrom']
+    attributes = class_info['attributes']
+    methods = class_info['methods']
 
-    java_class_code += '\n'
+    # Build class declaration
+    class_declaration = "public "
+    if is_interface:
+        class_declaration += 'interface '
+    else:
+        if is_abstract:
+            class_declaration += 'abstract '
+        class_declaration += 'class '
 
-    # Process methods
-    methods = json_obj.get('methods', [])
-    for method in methods:
-        method_name = method.get('name', 'unknownMethod')
-        return_type = method.get('returnType', 'void')
-        arguments = ', '.join(method.get('arguments', []))
-        java_class_code += f'    public {return_type} {method_name}({arguments})' + ' {\n'
-        java_class_code += '        // Your method implementation here\n'
-        java_class_code += '    }\n\n'
+    class_declaration += class_name
 
-    java_class_code += '}'
+    # Check if the class inherits from another class or interface
+    if inherits_from != {}:
+        for parent in classes:
+            if parent['name'] == inherits_from:
+                parent_type = 'implements' if is_interface else 'extends'
+                class_declaration += f' {parent_type} {inherits_from}'
 
-    return java_class_code
+    class_declaration += ' {'
+
+    # Generate attribute declarations
+    attribute_declarations = generate_attributes(attributes)
+
+    # Generate method declarations
+    method_declarations = generate_methods(methods, is_interface)
+
+    # Add class declaration, attributes, and methods to the Java code
+    java_code.extend([class_declaration])
+    java_code.extend(['    ' + attr_decl for attr_decl in attribute_declarations])
+    java_code.extend(['    ' + method_decl for method_decl in method_declarations])
+
+    java_code.append('}')
+
+    # Join the generated lines into a single string
+    return '\n'.join(java_code)
 
 
 def write_java_class_to_file(java_class_code, file_name):
