@@ -133,14 +133,14 @@ def detectSimpleArrows(image):
     return marked_image, line_points
 
 
-def detectLines(image):
+def detectLines(image, rectangles):
     blurred_image = cv2.GaussianBlur(image, (5, 5), 0)
 
     # Perform edge detection using the Canny edge detector
     edges = cv2.Canny(blurred_image, 50, 150)
 
     # Perform Hough Line Transform to detect lines
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=20, minLineLength=5, maxLineGap=0)
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=10, minLineLength=5, maxLineGap=3)
 
     # Extract starting and ending points of detected lines
     line_points = []
@@ -148,15 +148,38 @@ def detectLines(image):
     if lines is not None:
         for line in lines:
             x1, y1, x2, y2 = line[0]
-
-            angle_deg = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))  # Calculate angle in degrees
-            # Check if the angle falls within the desired ranges
-            range_deg = 2
-            if (
-                    0 <= angle_deg <= range_deg or 90 - range_deg <= angle_deg <= 90 + range_deg or 180 - range_deg <= angle_deg <= 180 + range_deg or
-                    270 - range_deg <= angle_deg <= 290 + range_deg or 360 - range_deg <= angle_deg <= 360):
-                line_points.append(((x1, y1), (x2, y2)))
-                cv2.line(marked_image, (x1, y1), (x2, y2), (0, 255, 255), 2)  # Draw line in blue
+            tolerance=5
+            is_within = False
+            for ((mx1,my1),(mx2, my2)) in rectangles:
+                if ((
+                    ((mx1 + tolerance < x1 < mx2 - tolerance) or (
+                            mx1 - tolerance < x1 < mx2 + tolerance) or (
+                             mx1 + tolerance > x1 > mx2 - tolerance) or (
+                             mx1 - tolerance > x1 > mx2 + tolerance)) and (
+                    (my1 + tolerance < y1 < my2 - tolerance) or (
+                    my1 - tolerance < y1 < my2 + tolerance) or (
+                            my1 + tolerance > y1 > my2 - tolerance) or (
+                            my1 - tolerance > y1 > my2 + tolerance))
+            ) and (
+                    ((mx1 + tolerance < x2 < mx2 - tolerance) or (
+                            mx1 - tolerance < x2 < mx2 + tolerance) or (
+                             mx1 + tolerance > x2 > mx2 - tolerance) or (
+                             mx1 - tolerance > x2 > mx2 + tolerance)) and (
+                    (my1 + tolerance < y2 < my2 - tolerance) or (
+                    my1 - tolerance < y2 < my2 + tolerance) or (
+                            my1 + tolerance > y2 > my2 - tolerance) or (
+                            my1 - tolerance > y2 > my2 + tolerance))
+            )):
+                    is_within=True
+            if not is_within:
+                angle_deg = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))  # Calculate angle in degrees
+                # Check if the angle falls within the desired ranges
+                range_deg = 2
+                if (
+                        0 <= angle_deg <= range_deg or 90 - range_deg <= angle_deg <= 90 + range_deg or 180 - range_deg <= angle_deg <= 180 + range_deg or
+                        270 - range_deg <= angle_deg <= 290 + range_deg or 360 - range_deg <= angle_deg <= 360):
+                    line_points.append(((x1, y1), (x2, y2)))
+                    cv2.line(marked_image, (x1, y1), (x2, y2), (0, 255, 255), 2)  # Draw line in blue
 
     return marked_image, line_points
 
@@ -615,19 +638,21 @@ if __name__ == '__main__':
     filteredDoubleArrows = filterDoubledArrows(triangles, slopeLines)
     # cv2.imshow("Filtered Arrows",
     #           scale(paintLines(filteredDoubleArrows, enhancedImage), 1000, 1000))
-    horizontalVerticalLinesImage, horizontalVerticalLines = detectLines(enhancedImage)
+
+    classes = filterClassSegments(rectangles.copy())
+    cv2.imshow("Classes", scale(paintClasses(classes, enhancedImage), 1000, 1000))
+
+    horizontalVerticalLinesImage, horizontalVerticalLines = detectLines(enhancedImage, rectangles)
     cv2.imshow("Lines", scale(horizontalVerticalLinesImage, 1000, 1000))
     filteredActualSimpleArrows = filterNonArrows(filteredDoubleArrows, horizontalVerticalLines, 5)
     cv2.imshow("Actual Simple Arrows",
                scale(paintLines(filteredActualSimpleArrows, enhancedImage), 1000, 1000))
-    classes = filterClassSegments(rectangles.copy())
-    cv2.imshow("Classes", scale(paintClasses(classes, enhancedImage), 1000, 1000))
 
     filterdLines = filterHVLines(horizontalVerticalLines, flatten_list_of_lists(classes), 10)
     filterdLinesImage = paintLines(filterdLines, enhancedImage)
     cv2.imshow("filtered Lines", scale(filterdLinesImage, 1000, 1000))
 
-    markedLines, markedLinesDict = filter_marked_lines(filterdLines, triangles, 50)
+    markedLines, markedLinesDict = filter_marked_lines(filterdLines, triangles, 30)
     markedLinesImage = paintLines(markedLines, enhancedImage)
     cv2.imshow("Marked Lines", scale(markedLinesImage, 1000, 1000))
 
