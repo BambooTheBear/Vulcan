@@ -85,7 +85,7 @@ def json_to_java_class(class_info, classes):
             if is_interface:
                 method_declarations.append(f'{access_modifier} abstract {return_type} {method_name}({arguments});')
             else:
-                method_declarations.append(f'{access_modifier} {return_type} {method_name}({arguments}) {{ /* method implementation */ }}')
+                method_declarations.append(f'{access_modifier} {return_type} {method_name}({arguments}) {{ \n \t \t //Implementation \n \t}}')
 
         return method_declarations
 
