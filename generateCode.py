@@ -123,6 +123,10 @@ def json_to_java_class(class_info, classes):
     # Generate method declarations
     method_declarations = generate_methods(methods, is_interface)
 
+    print(class_declaration)
+    print(method_declarations)
+    print(attribute_declarations)
+
     # Add class declaration, attributes, and methods to the Java code
     java_code.extend([class_declaration])
     java_code.extend(['    ' + attr_decl for attr_decl in attribute_declarations])
