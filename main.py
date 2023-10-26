@@ -9,33 +9,39 @@ import pytesseract
 from generateCode import generateCode
 
 
+###########################################
+# Image modifications                     #
+###########################################
+
+# scales the Image to desired parameters (for visualisation)
 def scale(image, max_width, max_height):
-    # Get the original dimensions of the image
     original_height, original_width = image.shape[:2]
 
-    # Calculate the scaling factors to fit the image onto the screen
     scale_x = max_width / original_width
     scale_y = max_height / original_height
     scaling_factor = min(scale_x, scale_y)
 
-    # Calculate the new dimensions after scaling
     new_width = int(original_width * scaling_factor)
     new_height = int(original_height * scaling_factor)
 
-    # Resize the image using the calculated dimensions
     scaled_image = cv2.resize(image, (new_width, new_height))
 
     return scaled_image
 
 
+# cuts the image to the desired dimensions
+def cut(x1, y1, x2, y2, image):
+    return image[y1:y2, x1:x2]
+
+
+# reformats the image to an enhanced version of the image using the discusses algorithms
 def enhanceImage(image_path):
-    # Read the input image
     image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
-    # Noise Reduction using Gaussian Blur
+    # Noise Reduction using Gaussian Blur (only necessary with certain input qualities)
     blurred_image = cv2.GaussianBlur(image, (1, 1), 0)
 
-    # Thresholding
+    # Thresholding using the Binary and OTSU Algorithms
     _, thresholded_image = cv2.threshold(image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
     extremed_image = image
@@ -51,32 +57,126 @@ def enhanceImage(image_path):
     return extremed_thresholded_image
 
 
+#####################################################################
+# Functions for painting onto the image (for visualisation)         #
+#####################################################################
+
+# paints the Lines from pairs of Points (x1, y1) ----> (x2, y2)
+def paintLines(points, image):
+    colored_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    for ((x1, y1), (x2, y2)) in points:
+        cv2.line(colored_image, (x1, y1), (x2, y2), (255, 0, 255), 2)  # Draw line in blue
+    return colored_image
+
+
+# paints the lines from pairs of points (x1, y1) ----> (x2, y2), but onto colored images
+def paintLinesColored(points, colored_image):
+    for ((x1, y1), (x2, y2)) in points:
+        cv2.line(colored_image, (x1, y1), (x2, y2), (255, 0, 255), 2)  # Draw line in blue
+    return colored_image
+
+
+# paints the rectangles from pairs of points
+def paintRectangles(rectangles, image):
+    for ((x1, y1), (x2, y2)) in rectangles:
+        cv2.rectangle(image, (x1, y1), (x2, y2), (255, 255, 0), 2)
+    return image
+
+
+# paints the classes with red for class-segment, green for attributes, blue for methods
+# if only method or attributes, than green for class-segment and blue for the other segment
+def paintClasses(rectangles, image):
+    colored_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    for rectangleList in rectangles:
+        for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
+            if i == 0:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+            elif i == 1:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            elif i == 2:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    return colored_image
+
+
+# same as above, but for colored images
+def paintClassesColored(rectangles, colored_image):
+    for j, rectangleList in enumerate(rectangles):
+        for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
+            if i == 0:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+            elif i == 1:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            elif i == 2:
+                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    return colored_image
+
+
+# Finally draws the entirety of all detections of the process
+def drawEverything(inheritanceArows, assosiationArrows, classes, connections, blackWhiteImage):
+    image = cv2.cvtColor(blackWhiteImage, cv2.COLOR_GRAY2BGR)
+    image = paintRectangles(inheritanceArows, image)
+    image = paintLinesColored(assosiationArrows, image)
+    image = paintClassesColored(classes, image)
+    image = paintLinesColored(connections, image)
+    image = scale(image, 1000, 1000)
+    cv2.imshow("Everything", image)
+
+
+############################################################
+# Helper functions fot the actual analysis                 #
+############################################################
+
+# detects all the rectangles in te image
 def detectRectangles(image):
-    # Convert the image to binary using thresholding
+    # needs custom thresholding for this process
     _, binary_image = cv2.threshold(image, 128, 255, cv2.THRESH_BINARY)
 
-    # Find contours in the binary image
+    # Ramer-Douglas-Peucker Algorithm as discussed in the Paper
     contours, _ = cv2.findContours(binary_image, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
     # Convert to color image
     color_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
     rectangles = []
-    # Iterate through the contours and draw rectangles with colored outlines
     for contour in contours:
-        # OG: 0.04
         epsilon = 0.01 * cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, epsilon, True)
-
-        # 3 detects arrows? 10 detects plus signs?
+        # Polygon with 4 corners ~ Rectangle
         if len(approx) == 4:
             x, y, w, h = cv2.boundingRect(contour)
-
             if 30 <= w <= image.shape[1] * 0.9 and 30 <= h <= image.shape[0] * 0.9:
                 rectangles.append(((x, y), (x + w, y + h)))
                 cv2.rectangle(color_image, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Draw green rectangle
 
     return color_image, rectangles
+
+
+# calculates the distance (for specific point formatting)
+def distance(p1, p2):
+    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+
+
+# detects if the line is within a rectangle
+def lineInRect(line, rect):
+    x1, y1 = line[0]
+    x2, y2 = line[1]
+    rx1, ry1 = rect[0]
+    rx2, ry2 = rect[1]
+
+    return rx1 <= x1 <= rx2 and ry1 <= y1 <= ry2 and rx1 <= x2 <= rx2 and ry1 <= y2 <= ry2
+
+
+# returns the distance between 2 rectangles:
+def calculate_distance(rect1, rect2):
+    x1_1, y1_1 = rect1[0]
+    x2_1, y2_1 = rect1[1]
+    x1_2, y1_2 = rect2[0]
+    x2_2, y2_2 = rect2[1]
+
+    distance_x = max(0, max(x1_1, x1_2) - min(x2_1, x2_2))
+    distance_y = max(0, max(y1_1, y1_2) - min(y2_1, y2_2))
+
+    return distance_x + distance_y
 
 
 def detectArrows(image):
@@ -148,29 +248,29 @@ def detectLines(image, rectangles):
     if lines is not None:
         for line in lines:
             x1, y1, x2, y2 = line[0]
-            tolerance=5
+            tolerance = 5
             is_within = False
-            for ((mx1,my1),(mx2, my2)) in rectangles:
+            for ((mx1, my1), (mx2, my2)) in rectangles:
                 if ((
-                    ((mx1 + tolerance < x1 < mx2 - tolerance) or (
-                            mx1 - tolerance < x1 < mx2 + tolerance) or (
-                             mx1 + tolerance > x1 > mx2 - tolerance) or (
-                             mx1 - tolerance > x1 > mx2 + tolerance)) and (
-                    (my1 + tolerance < y1 < my2 - tolerance) or (
-                    my1 - tolerance < y1 < my2 + tolerance) or (
-                            my1 + tolerance > y1 > my2 - tolerance) or (
-                            my1 - tolerance > y1 > my2 + tolerance))
-            ) and (
-                    ((mx1 + tolerance < x2 < mx2 - tolerance) or (
-                            mx1 - tolerance < x2 < mx2 + tolerance) or (
-                             mx1 + tolerance > x2 > mx2 - tolerance) or (
-                             mx1 - tolerance > x2 > mx2 + tolerance)) and (
-                    (my1 + tolerance < y2 < my2 - tolerance) or (
-                    my1 - tolerance < y2 < my2 + tolerance) or (
-                            my1 + tolerance > y2 > my2 - tolerance) or (
-                            my1 - tolerance > y2 > my2 + tolerance))
-            )):
-                    is_within=True
+                        ((mx1 + tolerance < x1 < mx2 - tolerance) or (
+                                mx1 - tolerance < x1 < mx2 + tolerance) or (
+                                 mx1 + tolerance > x1 > mx2 - tolerance) or (
+                                 mx1 - tolerance > x1 > mx2 + tolerance)) and (
+                                (my1 + tolerance < y1 < my2 - tolerance) or (
+                                my1 - tolerance < y1 < my2 + tolerance) or (
+                                        my1 + tolerance > y1 > my2 - tolerance) or (
+                                        my1 - tolerance > y1 > my2 + tolerance))
+                ) and (
+                        ((mx1 + tolerance < x2 < mx2 - tolerance) or (
+                                mx1 - tolerance < x2 < mx2 + tolerance) or (
+                                 mx1 + tolerance > x2 > mx2 - tolerance) or (
+                                 mx1 - tolerance > x2 > mx2 + tolerance)) and (
+                                (my1 + tolerance < y2 < my2 - tolerance) or (
+                                my1 - tolerance < y2 < my2 + tolerance) or (
+                                        my1 + tolerance > y2 > my2 - tolerance) or (
+                                        my1 - tolerance > y2 > my2 + tolerance))
+                )):
+                    is_within = True
             if not is_within:
                 angle_deg = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))  # Calculate angle in degrees
                 # Check if the angle falls within the desired ranges
@@ -203,20 +303,7 @@ def filterDoubledArrows(triangles, slopes):
     return filteredSlopes
 
 
-def paintLines(points, image):
-    colored_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    for ((x1, y1), (x2, y2)) in points:
-        cv2.line(colored_image, (x1, y1), (x2, y2), (255, 0, 255), 2)  # Draw line in blue
-    return colored_image
-
-
-def paintLinesColored(points, colored_image):
-    for ((x1, y1), (x2, y2)) in points:
-        cv2.line(colored_image, (x1, y1), (x2, y2), (255, 0, 255), 2)  # Draw line in blue
-    return colored_image
-
-
-def distance_point_to_line_segment(x, y, x1, y1, x2, y2):
+def distancePointToLineSegment(x, y, x1, y1, x2, y2):
     # Calculate the squared length of the line segment
     line_length_squared = (x2 - x1) ** 2 + (y2 - y1) ** 2
 
@@ -253,27 +340,15 @@ def filterNonArrows(linesA, linesB, tolerance):
                     dist_end_end <= tolerance):
                 for lineB2 in linesB:
                     if lineB2 != lineB:
-                        if distance_point_to_line_segment(lineB[0][0], lineB[0][1], lineB2[0][0], lineB2[0][1],
-                                                          lineB2[1][0], lineB2[1][1]) < tolerance and \
-                                distance_point_to_line_segment(lineB[1][0], lineB[1][1], lineB2[0][0], lineB2[0][1],
-                                                               lineB2[1][0], lineB2[1][1]) < tolerance:
+                        if distancePointToLineSegment(lineB[0][0], lineB[0][1], lineB2[0][0], lineB2[0][1],
+                                                      lineB2[1][0], lineB2[1][1]) < tolerance and \
+                                distancePointToLineSegment(lineB[1][0], lineB[1][1], lineB2[0][0], lineB2[0][1],
+                                                           lineB2[1][0], lineB2[1][1]) < tolerance:
                             filtered_lines.append(lineA)
                             filtered_lines.append(lineB)
                             break  # Once a match is found, no need to check the rest of the linesB
 
     return filtered_lines
-
-
-def calculate_distance(rect1, rect2):
-    x1_1, y1_1 = rect1[0]
-    x2_1, y2_1 = rect1[1]
-    x1_2, y1_2 = rect2[0]
-    x2_2, y2_2 = rect2[1]
-
-    distance_x = max(0, max(x1_1, x1_2) - min(x2_1, x2_2))
-    distance_y = max(0, max(y1_1, y1_2) - min(y2_1, y2_2))
-
-    return distance_x + distance_y
 
 
 def filterClassSegments(rectangles):
@@ -302,34 +377,8 @@ def filterClassSegments(rectangles):
     return result
 
 
-def paintClasses(rectangles, image):
-    colored_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    for rectangleList in rectangles:
-        for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
-            if i == 0:
-                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            elif i == 1:
-                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            elif i == 2:
-                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
-    return colored_image
-
-
-def paintClassesColored(rectangles, colored_image):
-    for j, rectangleList in enumerate(rectangles):
-        for i, ((x1, y1), (x2, y2)) in enumerate(rectangleList):
-            # cv2.imshow(f"{pytesseract.image_to_string(Image.fromarray(cut(x1,y1,x2,y2,colored_image)))}", cut(x1,y1,x2,y2,colored_image))
-            if i == 0:
-                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            elif i == 1:
-                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            elif i == 2:
-                cv2.rectangle(colored_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
-    return colored_image
-
-
 def getClassesText(rectangles, original_image):
-    classesJson=[]
+    classesJson = []
     for j, rectangleList in enumerate(rectangles):
         o = {"ClassName": "", "Attributes": [], "Methods": []}
         tmp = False
@@ -375,21 +424,6 @@ def getClassesText(rectangles, original_image):
     return original_image, classesJson
 
 
-def paintRectangles(rectangles, image):
-    for ((x1, y1), (x2, y2)) in rectangles:
-        cv2.rectangle(image, (x1, y1), (x2, y2), (255, 255, 0), 2)
-    return image
-
-
-def is_line_inside_rect(line, rect):
-    x1, y1 = line[0]
-    x2, y2 = line[1]
-    rx1, ry1 = rect[0]
-    rx2, ry2 = rect[1]
-
-    return rx1 <= x1 <= rx2 and ry1 <= y1 <= ry2 and rx1 <= x2 <= rx2 and ry1 <= y2 <= ry2
-
-
 def filterHVLines(lines, rectangles, threshold):
     filtered_lines = []
 
@@ -400,7 +434,7 @@ def filterHVLines(lines, rectangles, threshold):
             extended_rect = ((rect[0][0] - threshold, rect[0][1] - threshold),
                              (rect[1][0] + threshold, rect[1][1] + threshold))
 
-            if is_line_inside_rect(line, extended_rect):
+            if lineInRect(line, extended_rect):
                 is_inside = True
                 break
 
@@ -410,20 +444,7 @@ def filterHVLines(lines, rectangles, threshold):
     return filtered_lines
 
 
-def drawEverything(inheritanceArows, assosiationArrows, classes, blackWhiteImage):
-    image = cv2.cvtColor(blackWhiteImage, cv2.COLOR_GRAY2BGR)
-    image = paintRectangles(inheritanceArows, image)
-    image = paintLinesColored(assosiationArrows, image)
-    image = paintClassesColored(classes, image)
-    image = scale(image, 1000, 1000)
-    cv2.imshow("Everything", image)
-
-
-def cut(x1, y1, x2, y2, image):
-    return image[y1:y2, x1:x2]
-
-
-def flatten_list_of_lists(list_of_lists):
+def flattenListofLists(list_of_lists):
     flattened_list = []
     for sublist in list_of_lists:
         for item in sublist:
@@ -431,11 +452,7 @@ def flatten_list_of_lists(list_of_lists):
     return flattened_list
 
 
-def distance(p1, p2):
-    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
-
-
-def mark_adjacent_lines(lines, arrowHeads, marked_lines, proximity_threshold):
+def markAdjacentLines(lines, arrowHeads, marked_lines, proximity_threshold):
     newly_marked = []
 
     for line in lines:
@@ -463,7 +480,7 @@ def mark_adjacent_lines(lines, arrowHeads, marked_lines, proximity_threshold):
     return newly_marked
 
 
-def find_connected_lines(lines, proximity_threshold):
+def getConnectedLines(lines, proximity_threshold):
     connected_lines = {}
     for i, line1 in enumerate(lines):
         for j, line2 in enumerate(lines):
@@ -476,9 +493,9 @@ def find_connected_lines(lines, proximity_threshold):
     return connected_lines
 
 
-def filter_marked_lines(lines, arrowHeads, proximity_threshold):
+def filterMarkedLines(lines, arrowHeads, proximity_threshold):
     marked_lines = []
-    new_marked_lines = mark_adjacent_lines(lines, arrowHeads, marked_lines, proximity_threshold)
+    new_marked_lines = markAdjacentLines(lines, arrowHeads, marked_lines, proximity_threshold)
 
     line_arrowhead_dict = {}  # Dictionary to store line-arrowhead associations
 
@@ -492,9 +509,9 @@ def filter_marked_lines(lines, arrowHeads, proximity_threshold):
                     line_arrowhead_dict.setdefault(line, []).append(rect)
 
         marked_lines.extend(new_marked_lines)
-        new_marked_lines = mark_adjacent_lines(lines, arrowHeads, marked_lines, proximity_threshold)
+        new_marked_lines = markAdjacentLines(lines, arrowHeads, marked_lines, proximity_threshold)
 
-    connected_lines = find_connected_lines(lines, proximity_threshold)
+    connected_lines = getConnectedLines(lines, proximity_threshold)
 
     return marked_lines, connected_lines
 
@@ -582,10 +599,10 @@ def filterLinesWithArrowhead(lines, arrowheads, classes):
 
 
 def detectRelations(connectionDict, classes, original_image):
-    connections=[]
+    connections = []
     tolerance = 20
     for ((lineX1, lineY1), (lineX2, lineY2)), (
-    ((startX1, startY1), (startX2, startY2)), ((endX1, endY1), (endX2, endY2))) in connectionDict.items():
+            ((startX1, startY1), (startX2, startY2)), ((endX1, endY1), (endX2, endY2))) in connectionDict.items():
         for clas in classes:
             (mx1, my1), (mx2, my2) = clas[0]
             if (
@@ -602,21 +619,19 @@ def detectRelations(connectionDict, classes, original_image):
                     if ((startX1, startY1), (startX2, startY2)) in clas2:
                         (mx1, my1), (mx2, my2) = clas[-1]
                         if ((mx1, my1), (mx2, my2)) != ((startX1, startY1), (startX2, startY2)):
-                            t = ""+pytesseract.image_to_string(
+                            t = "" + pytesseract.image_to_string(
                                 Image.fromarray(cut(startX1, startY1, startX2, startY2, original_image)))
-                            s = ""+pytesseract.image_to_string(
+                            s = "" + pytesseract.image_to_string(
                                 Image.fromarray(cut(mx1, my1, mx2, my2, original_image)))
                             print(f"Connection from {t} to {s}")
-                            t = t.replace("«abstract»", "").replace("«interface»", "").replace("<<abstract>>", "").replace("<<interface>>", "")
-                            s = s.replace("«abstract»", "").replace("«interface»", "").replace("<<abstract>>", "").replace("<<interface>>", "")
+                            t = t.replace("«abstract»", "").replace("«interface»", "").replace("<<abstract>>",
+                                                                                               "").replace(
+                                "<<interface>>", "")
+                            s = s.replace("«abstract»", "").replace("«interface»", "").replace("<<abstract>>",
+                                                                                               "").replace(
+                                "<<interface>>", "")
                             connections.append((t, s))
     return connections
-
-def printDictNice(dictionary):
-    for key, values in dictionary.items():
-        print(f"   {key}     ")
-        for value in values:
-            print(f"         {value} ;")
 
 
 # Main Method
@@ -648,11 +663,11 @@ if __name__ == '__main__':
     cv2.imshow("Actual Simple Arrows",
                scale(paintLines(filteredActualSimpleArrows, enhancedImage), 1000, 1000))
 
-    filterdLines = filterHVLines(horizontalVerticalLines, flatten_list_of_lists(classes), 10)
+    filterdLines = filterHVLines(horizontalVerticalLines, flattenListofLists(classes), 10)
     filterdLinesImage = paintLines(filterdLines, enhancedImage)
     cv2.imshow("filtered Lines", scale(filterdLinesImage, 1000, 1000))
 
-    markedLines, markedLinesDict = filter_marked_lines(filterdLines, triangles, 30)
+    markedLines, markedLinesDict = filterMarkedLines(filterdLines, triangles, 30)
     markedLinesImage = paintLines(markedLines, enhancedImage)
     cv2.imshow("Marked Lines", scale(markedLinesImage, 1000, 1000))
 
@@ -668,7 +683,7 @@ if __name__ == '__main__':
 
     relations = detectRelations(connectionDict, classes, cv2.imread(filePath, cv2.IMREAD_GRAYSCALE))
 
-    drawEverything(triangles, filteredActualSimpleArrows, classes, enhancedImage)
+    drawEverything(triangles, filteredActualSimpleArrows, classes, actualConnections, enhancedImage)
 
     classesImage, classesJson = getClassesText(classes, cv2.imread(filePath, cv2.IMREAD_GRAYSCALE))
 
@@ -676,5 +691,3 @@ if __name__ == '__main__':
 
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-
-# Top Left to bottom right?
