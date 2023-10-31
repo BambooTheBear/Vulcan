@@ -119,14 +119,74 @@ def drawEverything(inheritanceArows, assosiationArrows, classes, connections, bl
     image = paintClassesColored(classes, image)
     image = paintLinesColored(connections, image)
     image = scale(image, 1000, 1000)
-    cv2.imshow("Everything", image)
+    cv2.imshow("Final Conclusive Analysis", image)
 
 
 ############################################################
-# Helper functions fot the actual analysis                 #
+# Helper functions for the actual analysis                 #
 ############################################################
 
-# detects all the rectangles in te image
+# calculates the distance (for specific point formatting)
+def distance(p1, p2):
+    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+
+
+# detects if the line is within a rectangle
+def lineInRect(line, rect):
+    x1, y1 = line[0]
+    x2, y2 = line[1]
+    rx1, ry1 = rect[0]
+    rx2, ry2 = rect[1]
+
+    return rx1 <= x1 <= rx2 and ry1 <= y1 <= ry2 and rx1 <= x2 <= rx2 and ry1 <= y2 <= ry2
+
+
+# returns the distance between 2 rectangles:
+def calculateDistance(rect1, rect2):
+    x1_1, y1_1 = rect1[0]
+    x2_1, y2_1 = rect1[1]
+    x1_2, y1_2 = rect2[0]
+    x2_2, y2_2 = rect2[1]
+
+    distance_x = max(0, max(x1_1, x1_2) - min(x2_1, x2_2))
+    distance_y = max(0, max(y1_1, y1_2) - min(y2_1, y2_2))
+
+    return distance_x + distance_y
+
+
+# calculates the distance between a point and its closest point to a line
+def distancePointToLineSegment(x, y, x1, y1, x2, y2):
+    line_length_squared = (x2 - x1) ** 2 + (y2 - y1) ** 2
+
+    t = ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / line_length_squared
+
+    # If t is outside [0, 1] -> the closest point is one of the endpoints
+    if t < 0:
+        return math.sqrt((x - x1) ** 2 + (y - y1) ** 2)
+    elif t > 1:
+        return math.sqrt((x - x2) ** 2 + (y - y2) ** 2)
+
+    closest_x = x1 + t * (x2 - x1)
+    closest_y = y1 + t * (y2 - y1)
+
+    return math.sqrt((x - closest_x) ** 2 + (y - closest_y) ** 2)
+
+
+# flattens a list of lists -> [[x,y],[a,b,c]] => [x,y,a,b,c]
+def flattenListofLists(list_of_lists):
+    flattened_list = []
+    for sublist in list_of_lists:
+        for item in sublist:
+            flattened_list.append(item)
+    return flattened_list
+
+
+##############################################################
+# Helper function for completing subtasks detection          #
+##############################################################
+
+
+# detects all the rectangles in the image
 def detectRectangles(image):
     # needs custom thresholding for this process
     _, binary_image = cv2.threshold(image, 128, 255, cv2.THRESH_BINARY)
@@ -151,52 +211,22 @@ def detectRectangles(image):
     return color_image, rectangles
 
 
-# calculates the distance (for specific point formatting)
-def distance(p1, p2):
-    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
-
-
-# detects if the line is within a rectangle
-def lineInRect(line, rect):
-    x1, y1 = line[0]
-    x2, y2 = line[1]
-    rx1, ry1 = rect[0]
-    rx2, ry2 = rect[1]
-
-    return rx1 <= x1 <= rx2 and ry1 <= y1 <= ry2 and rx1 <= x2 <= rx2 and ry1 <= y2 <= ry2
-
-
-# returns the distance between 2 rectangles:
-def calculate_distance(rect1, rect2):
-    x1_1, y1_1 = rect1[0]
-    x2_1, y2_1 = rect1[1]
-    x1_2, y1_2 = rect2[0]
-    x2_2, y2_2 = rect2[1]
-
-    distance_x = max(0, max(x1_1, x1_2) - min(x2_1, x2_2))
-    distance_y = max(0, max(y1_1, y1_2) - min(y2_1, y2_2))
-
-    return distance_x + distance_y
-
-
+# detects all the arrowheads in an image
 def detectArrows(image):
-    # Convert the image to binary using thresholding
+    # Needs custom thresholding for this process
     _, binary_image = cv2.threshold(image, 128, 255, cv2.THRESH_BINARY)
 
-    # Find contours in the binary image
+    # Ramer-Douglas-Peucker Algorithm as discussed in the Paper
     contours, _ = cv2.findContours(binary_image, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Convert to color image
     color_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
     triangles = []
-    # Iterate through the contours and draw rectangles with colored outlines
     for contour in contours:
-        # OG: 0.04
         epsilon = 0.04 * cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, epsilon, True)
 
-        # 3 detects arrows? 10 detects plus signs?
+        # Polygon with 3 Corners ~ Triangle
         if len(approx) == 3:
             x, y, w, h = cv2.boundingRect(contour)
             triangles.append(((x, y), (x + w, y + h)))
@@ -205,44 +235,43 @@ def detectArrows(image):
     return color_image, triangles
 
 
+# Detects simple Arrows indicating associations and not inheritance
 def detectSimpleArrows(image):
     blurred_image = cv2.GaussianBlur(image, (5, 5), 0)
 
-    # Perform edge detection using the Canny edge detector
+    # Edge detection using the Canny edge detector
     edges = cv2.Canny(blurred_image, 50, 150)
 
-    # Perform Hough Line Transform to detect lines
+    # Hough Line Transform to detect lines
     lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=10, minLineLength=10, maxLineGap=5)
-
-    # Extract starting and ending points of detected lines
     line_points = []
     marked_image = cv2.cvtColor(blurred_image, cv2.COLOR_GRAY2BGR)
     if lines is not None:
         for line in lines:
             x1, y1, x2, y2 = line[0]
 
-            angle_deg = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))  # Calculate angle in degrees
+            angle_deg = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
 
-            # Check if the angle falls within the desired ranges
+            # Check if the angle of arrow falls within the desired ranges
             range_deg = 5
             if not (
                     0 <= angle_deg <= range_deg or 90 - range_deg <= angle_deg <= 90 + range_deg or 180 - range_deg <= angle_deg <= 180 + range_deg or
                     270 - range_deg <= angle_deg <= 290 + range_deg or 360 - range_deg <= angle_deg <= 360):
                 line_points.append(((x1, y1), (x2, y2)))
-                cv2.line(marked_image, (x1, y1), (x2, y2), (255, 255, 0), 2)  # Draw line in blue
+                cv2.line(marked_image, (x1, y1), (x2, y2), (255, 255, 0), 2)
     return marked_image, line_points
 
 
+# Finds all the straight lines in an image that are horizontal/vertical
 def detectLines(image, rectangles):
     blurred_image = cv2.GaussianBlur(image, (5, 5), 0)
 
-    # Perform edge detection using the Canny edge detector
+    # Edge detection using the Canny edge detector
     edges = cv2.Canny(blurred_image, 50, 150)
 
-    # Perform Hough Line Transform to detect lines
+    # Hough Line Transform to detect lines
     lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=10, minLineLength=5, maxLineGap=3)
 
-    # Extract starting and ending points of detected lines
     line_points = []
     marked_image = cv2.cvtColor(blurred_image, cv2.COLOR_GRAY2BGR)
     if lines is not None:
@@ -272,18 +301,19 @@ def detectLines(image, rectangles):
                 )):
                     is_within = True
             if not is_within:
-                angle_deg = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))  # Calculate angle in degrees
-                # Check if the angle falls within the desired ranges
-                range_deg = 2
+                angle_deg = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
+
+                range_deg = 2 # How non-horizontal/vertical can it be
                 if (
                         0 <= angle_deg <= range_deg or 90 - range_deg <= angle_deg <= 90 + range_deg or 180 - range_deg <= angle_deg <= 180 + range_deg or
                         270 - range_deg <= angle_deg <= 290 + range_deg or 360 - range_deg <= angle_deg <= 360):
                     line_points.append(((x1, y1), (x2, y2)))
-                    cv2.line(marked_image, (x1, y1), (x2, y2), (0, 255, 255), 2)  # Draw line in blue
+                    cv2.line(marked_image, (x1, y1), (x2, y2), (0, 255, 255), 2)
 
     return marked_image, line_points
 
 
+# filters out all Arrows that were counted multiple times
 def filterDoubledArrows(triangles, slopes):
     filteredSlopes = []
     tolerance = 100
@@ -303,27 +333,7 @@ def filterDoubledArrows(triangles, slopes):
     return filteredSlopes
 
 
-def distancePointToLineSegment(x, y, x1, y1, x2, y2):
-    # Calculate the squared length of the line segment
-    line_length_squared = (x2 - x1) ** 2 + (y2 - y1) ** 2
-
-    # Calculate the parameter t that represents the projection of the point onto the line segment
-    t = ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / line_length_squared
-
-    # If t is outside the range [0, 1], the closest point is one of the endpoints
-    if t < 0:
-        return math.sqrt((x - x1) ** 2 + (y - y1) ** 2)
-    elif t > 1:
-        return math.sqrt((x - x2) ** 2 + (y - y2) ** 2)
-
-    # Calculate the coordinates of the closest point on the line
-    closest_x = x1 + t * (x2 - x1)
-    closest_y = y1 + t * (y2 - y1)
-
-    # Calculate the distance between the point and the closest point on the line
-    return math.sqrt((x - closest_x) ** 2 + (y - closest_y) ** 2)
-
-
+# filters out arrows that were interpreted as arrows but were normal lines
 def filterNonArrows(linesA, linesB, tolerance):
     filtered_lines = []
 
@@ -351,6 +361,11 @@ def filterNonArrows(linesA, linesB, tolerance):
     return filtered_lines
 
 
+################################################
+# Functions for analyzing classes              #
+################################################
+
+# groups the rectangles into associated groups -> classes
 def filterClassSegments(rectangles):
     rectangles.sort(key=lambda rect: rect[1][1],
                     reverse=True)  # Sort rectangles by y2 (bottom y-coordinate) in descending order
@@ -363,7 +378,7 @@ def filterClassSegments(rectangles):
         to_remove = []
 
         for idx, rect in enumerate(rectangles):
-            if calculate_distance(current_rect, rect) <= 100:
+            if calculateDistance(current_rect, rect) <= 100:
                 group.append(rect)
                 to_remove.append(idx)
 
@@ -377,6 +392,7 @@ def filterClassSegments(rectangles):
     return result
 
 
+# extracts the text from class rectangles
 def getClassesText(rectangles, original_image):
     classesJson = []
     for j, rectangleList in enumerate(rectangles):
@@ -424,6 +440,11 @@ def getClassesText(rectangles, original_image):
     return original_image, classesJson
 
 
+#################################################
+# Functions for analyzing Arrows of Inheritance #
+#################################################
+
+# filters out all horizontal/vertical lines that are also rectangles
 def filterHVLines(lines, rectangles, threshold):
     filtered_lines = []
 
@@ -444,14 +465,7 @@ def filterHVLines(lines, rectangles, threshold):
     return filtered_lines
 
 
-def flattenListofLists(list_of_lists):
-    flattened_list = []
-    for sublist in list_of_lists:
-        for item in sublist:
-            flattened_list.append(item)
-    return flattened_list
-
-
+# recursively marks lines that are in proximity using the approach discussed in the paper
 def markAdjacentLines(lines, arrowHeads, marked_lines, proximity_threshold):
     newly_marked = []
 
@@ -480,6 +494,7 @@ def markAdjacentLines(lines, arrowHeads, marked_lines, proximity_threshold):
     return newly_marked
 
 
+# detects all lines that are connected
 def getConnectedLines(lines, proximity_threshold):
     connected_lines = {}
     for i, line1 in enumerate(lines):
@@ -493,6 +508,7 @@ def getConnectedLines(lines, proximity_threshold):
     return connected_lines
 
 
+# associates the lines with their respective arrow-head/group
 def filterMarkedLines(lines, arrowHeads, proximity_threshold):
     marked_lines = []
     new_marked_lines = markAdjacentLines(lines, arrowHeads, marked_lines, proximity_threshold)
@@ -516,6 +532,7 @@ def filterMarkedLines(lines, arrowHeads, proximity_threshold):
     return marked_lines, connected_lines
 
 
+# draws the connection from child to parent class
 def extractIndirectConnections(graph):
     def findIndirectConnections(node, x):
         indirect_connections = []
@@ -536,6 +553,7 @@ def extractIndirectConnections(graph):
     return indirect_graph
 
 
+# Helper function for extracting children of Inheritance
 def extractShortestConnection(dictionary):
     result = []
     for key, values in dictionary.items():
@@ -544,6 +562,7 @@ def extractShortestConnection(dictionary):
     return result
 
 
+# finds the association between Arrowheads and classes
 def filterLinesWithArrowhead(lines, arrowheads, classes):
     filtered_lines = []
     lineRectangles = {}
@@ -598,6 +617,7 @@ def filterLinesWithArrowhead(lines, arrowheads, classes):
     return filtered_lines, lineRectangles
 
 
+# turns Inheritance Association into usable information
 def detectRelations(connectionDict, classes, original_image):
     connections = []
     tolerance = 20
@@ -634,11 +654,12 @@ def detectRelations(connectionDict, classes, original_image):
     return connections
 
 
-# Main Method
+# Main Method for Processing everything
 if __name__ == '__main__':
     print("Started Vulcan")
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Benno\AppData\Local\Tesseract-OCR\tesseract.exe'
-    filePath = "./data/custom/semi_complex.png"
+    # Get the tesseract version from https://github.com/UB-Mannheim/Tesseract_Dokumentation
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Users\Benno\AppData\Local\Tesseract-OCR\tesseract.exe' # replace with path
+    filePath = "./data/custom/semi_complex.png" # replace with path to the image
 
     enhancedImage = enhanceImage(filePath)
 
@@ -649,28 +670,20 @@ if __name__ == '__main__':
     triangleImage, triangles = detectArrows(enhancedImage)
     cv2.imshow("Arrows", scale(triangleImage, 1000, 1000))
     slopeLinesImage, slopeLines = detectSimpleArrows(enhancedImage)
-    # cv2.imshow("Simple Arrows", scale(slopeLinesImage, 1000, 1000))
     filteredDoubleArrows = filterDoubledArrows(triangles, slopeLines)
-    # cv2.imshow("Filtered Arrows",
-    #           scale(paintLines(filteredDoubleArrows, enhancedImage), 1000, 1000))
-
     classes = filterClassSegments(rectangles.copy())
     cv2.imshow("Classes", scale(paintClasses(classes, enhancedImage), 1000, 1000))
-
     horizontalVerticalLinesImage, horizontalVerticalLines = detectLines(enhancedImage, rectangles)
     cv2.imshow("Lines", scale(horizontalVerticalLinesImage, 1000, 1000))
     filteredActualSimpleArrows = filterNonArrows(filteredDoubleArrows, horizontalVerticalLines, 5)
     cv2.imshow("Actual Simple Arrows",
                scale(paintLines(filteredActualSimpleArrows, enhancedImage), 1000, 1000))
-
     filterdLines = filterHVLines(horizontalVerticalLines, flattenListofLists(classes), 10)
     filterdLinesImage = paintLines(filterdLines, enhancedImage)
     cv2.imshow("filtered Lines", scale(filterdLinesImage, 1000, 1000))
-
     markedLines, markedLinesDict = filterMarkedLines(filterdLines, triangles, 30)
     markedLinesImage = paintLines(markedLines, enhancedImage)
     cv2.imshow("Marked Lines", scale(markedLinesImage, 1000, 1000))
-
     indirectLines = extractIndirectConnections(markedLinesDict)
     shortestConnections = extractShortestConnection(indirectLines)
     indirectLinesImage = paintLines(indirectLines, enhancedImage)
